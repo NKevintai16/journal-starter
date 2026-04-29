@@ -12,7 +12,10 @@ Set OPENAI_API_KEY, and optionally OPENAI_BASE_URL and OPENAI_MODEL
 in your .env file. Settings are loaded by ``api.config.Settings``.
 """
 
+import json
+
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from api.config import get_settings
 
@@ -62,7 +65,32 @@ async def analyze_journal_entry(
       4. Parse the assistant's JSON response with ``json.loads()``.
       5. Return a dict with ``entry_id``, ``sentiment``, ``summary``, ``topics``.
     """
-    raise NotImplementedError(
-        "Task 4: implement analyze_journal_entry using the openai SDK. "
-        "See tests/test_llm_service.py for the test contract."
+
+    if client is None:
+        client = _default_client()
+    messages: list[ChatCompletionMessageParam] = [
+        {
+            "role": "system",
+            "content": "Analyze the user's journal entry and respond with JSON containing sentiment, summary, and key topics. Return only JSON, no explanatory text.",
+        },
+        {"role": "user", "content": entry_text},
+    ]
+    response = await client.chat.completions.create(
+        model=get_settings().openai_model,
+        messages=messages,
     )
+    content = response.choices[0].message.content
+    if content is None:
+        return {
+            "entry_id": entry_id,
+            "sentiment": None,
+            "summary": "No analysis available",
+            "topics": [],
+        }
+    result = json.loads(content)
+    return {
+        "entry_id": entry_id,
+        "sentiment": result.get("sentiment"),
+        "summary": result.get("summary"),
+        "topics": result.get("topics", []),
+    }
